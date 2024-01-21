@@ -1,0 +1,6 @@
+Labs_material/
+Student_labs/.metadata/
+Debug/
+*.cproject
+*.project
+*.xml
