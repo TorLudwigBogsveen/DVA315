@@ -7,7 +7,7 @@ typedef int buffer_item;
 #include <pthread.h>
 #include <semaphore.h>
 
-#define DINING 0
+#define DINING 1
 
 
 //----------------------------------------PRODUCER CONSUMER SEGMENT----------------------------------------------
@@ -54,7 +54,7 @@ void initializeData() {
 void *producer(void *param) {
     buffer_item item;
 
-    printf("Producer created!");
+    printf("Producer created!\n");
     fflush(stdout);
     while(TRUE) {
         /* sleep for a random period of time */
@@ -95,11 +95,22 @@ void *consumer(void *param) {
 
 /* Add an item to the buffer */
 int insert_item(buffer_item item) {
+	// wait until the buffer is not full
+	sem_wait(&empty);
+	// Lock the mutex so no two threads modify the counter and buffer at the same time
+	pthread_mutex_lock(&mutex);
+
     /* When the buffer is not full add the item
      and increment the counter*/
     if(counter < BUFFER_SIZE) {
         buffer[counter] = item;
         counter++;
+
+        // unlock as we are done modifying the buffer and counter
+        pthread_mutex_unlock(&mutex);
+
+        // Sends to the consumers that there is a new item to consume
+		sem_post(&full);
         return 0;
     }
     else { /* Error the buffer is full */
@@ -109,23 +120,62 @@ int insert_item(buffer_item item) {
 
 /* Remove an item from the buffer */
 int remove_item(buffer_item *item) {
-    /* When the buffer is not empty remove the item
-     and decrement the counter */
+	// Wait until there are items to remove
+	sem_wait(&full);
+	// Lock the mutex so no two threads modify the counter and buffer at the same time
+	pthread_mutex_lock(&mutex);
+
+	/* When the buffer is not empty remove the item
+	     and decrement the counter */
     if(counter > 0) {
         *item = buffer[(counter-1)];
         counter--;
+
+        // unlock as we are done modifying the buffer and counter
+        pthread_mutex_unlock(&mutex);
+
+        // Sends to the producers that there is a new space to add items to
+        sem_post(&empty);
         return 0;
     }
     else { /* Error buffer empty */
+    	exit(1);
         return -1;
     }
 }
 //----------------------------------------PRODUCER CONSUMER SEGMENT----------------------------------------------
 
 //----------------------------------------DINING PHILOSOPHERS SEGMENT--------------------------------------------
+void *philosopher(void* param) {
+	while (1) {
+		// Think
+		usleep(10000);
+		// PICKUP(FORK[i], FORK[i+1 mod 5]);
+		printf("philosopher %d has picked up forks\n", (int)param);
+		// EAT;
+		printf("philosopher %d has eaten\n", (int)param);
+		// PUTDOWN(FORK[i], FORK[i+1 mod 5])
+		printf("philosopher %d puts down forks\n", (int)param);
+	}
+}
+
 void dining_philosophers()
 {
+	// List of philosopher threads
+	pthread_t philosophers[5];
+	/* Get the default attributes */
+	pthread_attr_init(&attr);
 
+	// Forks
+	pthread_mutex_t forks[10];
+
+	for (long i = 0; i < 5; i++) {
+		pthread_create(&philosophers[i], &attr, philosopher, (void*)i);
+	}
+
+	for (int i = 0; i < 5; i++) {
+		pthread_join(philosophers[i], NULL);
+	}
 }
 //----------------------------------------DINING PHILOSOPHERS SEGMENT--------------------------------------------
 int main(int argc, char *argv[]) {
@@ -144,6 +194,7 @@ int main(int argc, char *argv[]) {
     if (DINING == 1)
     {
     	//start dining philosophers
+    	dining_philosophers();
     }
     else //Start producer consumer
     {
