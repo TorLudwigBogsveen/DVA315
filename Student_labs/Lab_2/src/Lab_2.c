@@ -146,34 +146,76 @@ int remove_item(buffer_item *item) {
 //----------------------------------------PRODUCER CONSUMER SEGMENT----------------------------------------------
 
 //----------------------------------------DINING PHILOSOPHERS SEGMENT--------------------------------------------
+
+#define NUM_PHILOSOPHERS 5
+
+// Forks
+pthread_mutex_t forks[NUM_PHILOSOPHERS];
+
+// sleep for 10 000 us or 10 ms to represent the thinking time
+void think() {
+	usleep(10000);
+}
+
+
+// The philosophers eating time
+void eat() {
+	usleep(10000);
+}
+
+void pickup(pthread_mutex_t* left_fork, pthread_mutex_t* right_fork) {
+	// Loops until both forks have been successfully picked up
+	while(1) {
+		// Locking(picking them up) both forks so that no one else tries to use our forks
+		pthread_mutex_lock(left_fork);
+
+		/* Check if we can pickup the right fork and if we can do so,
+		 * if we cannot we need to put down the left fork so someone else can pick it up*/
+		if (pthread_mutex_trylock(right_fork) != 0) {
+			pthread_mutex_unlock(left_fork);
+			continue;
+		}
+
+		// We have been able to pickup both forks so we break out and then return
+		break;
+	}
+}
+
+void putdown(pthread_mutex_t* left_fork, pthread_mutex_t* right_fork) {
+	// Unlocking(putting them back down) both forks so that our neighbors can use them
+	pthread_mutex_unlock(right_fork);
+	pthread_mutex_unlock(left_fork);
+}
+
 void *philosopher(void* param) {
+	long i = (long)param;
 	while (1) {
-		// Think
-		usleep(10000);
+		// THINK;
+		think();
 		// PICKUP(FORK[i], FORK[i+1 mod 5]);
-		printf("philosopher %d has picked up forks\n", (int)param);
+		pickup(&forks[i], &forks[(i+1) % NUM_PHILOSOPHERS]);
+		printf("philosopher %ld has picked up forks\n", i);
 		// EAT;
-		printf("philosopher %d has eaten\n", (int)param);
+		eat();
+		printf("philosopher %ld has eaten\n", i);
 		// PUTDOWN(FORK[i], FORK[i+1 mod 5])
-		printf("philosopher %d puts down forks\n", (int)param);
+		printf("philosopher %ld puts down forks\n", i);
+		putdown(&forks[i], &forks[(i+1) % NUM_PHILOSOPHERS]);
 	}
 }
 
 void dining_philosophers()
 {
 	// List of philosopher threads
-	pthread_t philosophers[5];
+	pthread_t philosophers[NUM_PHILOSOPHERS];
 	/* Get the default attributes */
 	pthread_attr_init(&attr);
 
-	// Forks
-	pthread_mutex_t forks[10];
-
-	for (long i = 0; i < 5; i++) {
+	for (long i = 0; i < NUM_PHILOSOPHERS; i++) {
 		pthread_create(&philosophers[i], &attr, philosopher, (void*)i);
 	}
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < NUM_PHILOSOPHERS; i++) {
 		pthread_join(philosophers[i], NULL);
 	}
 }
