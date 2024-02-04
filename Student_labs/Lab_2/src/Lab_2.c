@@ -7,7 +7,7 @@ typedef int buffer_item;
 #include <pthread.h>
 #include <semaphore.h>
 
-#define DINING 1
+#define DINING 0
 
 
 //----------------------------------------PRODUCER CONSUMER SEGMENT----------------------------------------------
@@ -61,7 +61,11 @@ void *producer(void *param) {
         int rNum = rand() / RAND_DIVISOR;
         sleep(rNum);
 
+        //Lock the mutex to block anybody else from updating the count variable while we are reading and writing to it
+        pthread_mutex_lock(&mutex);
         item = count++;
+        //Unlock the mutex as we are done with the global variable count have have stored it's old value in item
+        pthread_mutex_unlock(&mutex);
 
         if(insert_item(item)) {
             fprintf(stderr, " Producer %ld report error condition\n", (long) param);
