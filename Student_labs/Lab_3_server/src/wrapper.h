@@ -11,12 +11,13 @@
 #include <pthread.h>
 #include <errno.h>
 
+#define MAX_SIZE 1024
 
-extern int MQcreate (mqd_t * mq, char * name);
-extern int MQconnect (mqd_t * mq, char * name);
-extern void * MQread (mqd_t mq, void ** buffer);
-extern int MQwrite (mqd_t mq, void * data);
-int MQclose(mqd_t * mq, char * name);
+extern int MQcreate (mqd_t * mq, const char * name);
+extern int MQconnect (mqd_t * mq, const char * name);
+extern ssize_t MQread (mqd_t mq, void * buffer, size_t buffer_length);
+extern ssize_t MQwrite (mqd_t mq, const void * data, size_t data_length);
+int MQclose(mqd_t mq);
 
 
 
@@ -32,6 +33,8 @@ typedef struct pt {
 	double		vx;			// X-axis velocity
 	double		vy;			// Y-axis velocity
 	double		mass;		// Planet mass
+	int 		color;		// Planet color
+	int 		radius;		// Planet radius
 	struct pt*	next;		// Pointer to next planet in linked list
 	int			life;		// Planet life
 	char		pid[30];	// String containing ID of creating process
