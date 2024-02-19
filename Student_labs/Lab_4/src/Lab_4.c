@@ -14,13 +14,14 @@
 #include<pthread.h>
 #include<string.h>
 #include<time.h>
+#include<sys/param.h>
 
 #define sched_RR 1
 #define sched_SJF 2
 #define sched_MQ 3
 
 #define QUEUE_SIZE 10
-int sched_type = sched_RR;
+int sched_type = sched_MQ;
 int finished = 0;
 int context_switch_program_exit = 0;
 int context_switch = 0;
@@ -34,16 +35,24 @@ typedef struct taskprop{
     int priority;		//Priority of task, can be used for the multiple queues
     int ID;			//ID, to distinguish different tasks from eachother
     int quantum;		//How long the task has left to execute
+    int priority_quantum; //How long the task has left in a specific priority queue
     int queue_size;
     struct taskprop * next;
     struct taskprop * previous;
 } task;
+
+typedef struct prioritytaskprop {
+	task* task;
+	struct prioritytaskprop* next;
+} prioritytask;
 
 task * ready_queue = NULL;
 task * waiting_queue = NULL;
 task * idle_task;
 int last_task = 0;
 
+prioritytask* priority_queues[3] = {NULL, NULL, NULL};
+int priority_quantum[3] = {1, 2, 4};
 
 task tasks[QUEUE_SIZE]; //Queue
 int activeTasks = 0;
@@ -65,12 +74,17 @@ void copy_task(task ** dest, task * src)		//Copies data of a task to another tas
 	temp->period = src->period;
 	temp->priority = src->priority;
 	temp->quantum = src->quantum;
+	temp->priority_quantum = src->priority_quantum;
 	*dest = temp;
 }
 
+void swap(task* a, task* b) {
+	task tmp = *a;
+	copy_task(&a, b);
+	copy_task(&b, &tmp);
+}
 
-
-task* create(int ID, int deadline, int release_time, int period, int prio, int quantum, task* next)			//Creates a new task
+task* create(int ID, int deadline, int release_time, int period, int prio, int quantum, int priority_quantum, task* next)			//Creates a new task
 {
     task* new_node = (task*)malloc(sizeof(task));
     if(new_node == NULL)
@@ -84,6 +98,7 @@ task* create(int ID, int deadline, int release_time, int period, int prio, int q
     new_node->period = period;
     new_node->priority = prio;
     new_node->quantum = quantum;
+    new_node->priority_quantum = priority_quantum;
     new_node->next = next;
     return new_node;
 }
@@ -93,7 +108,7 @@ task * enqueue(task * head, task data)			//Appends a task to a list
     task *cursor = head;
     if (cursor == NULL)
     {
-    	head =  create(data.ID, data.deadline, data.release_time, data.period, data.priority, data.quantum ,NULL);
+    	head = create(data.ID, data.deadline, data.release_time, data.period, data.priority, data.quantum, data.priority_quantum ,NULL);
     }
     else
     {
@@ -102,7 +117,32 @@ task * enqueue(task * head, task data)			//Appends a task to a list
     		cursor = cursor->next;
     	}
     /* create a new node */
-    	task* new_node =  create(data.ID, data.deadline, data.release_time, data.period, data.priority, data.quantum ,NULL);
+    	task* new_node =  create(data.ID, data.deadline, data.release_time, data.period, data.priority, data.quantum, data.priority_quantum ,NULL);
+    	cursor->next = new_node;
+    }
+    return head;
+}
+
+prioritytask * enqueue_priority(prioritytask * head, task* task)			//Appends a task to a list
+{
+    /* go to the last node */
+	prioritytask *cursor = head;
+    if (cursor == NULL)
+    {
+    	head = malloc(sizeof(prioritytask));
+    	head->next = NULL;
+    	head->task = task;
+    }
+    else
+    {
+    	while(cursor->next != NULL)
+    	{
+    		cursor = cursor->next;
+    	}
+    /* create a new node */
+    	prioritytask* new_node = malloc(sizeof(prioritytask));
+    	new_node->next = NULL;
+    	new_node->task = task;
     	cursor->next = new_node;
     }
     return head;
@@ -114,6 +154,20 @@ task * pop(task * head)			//Removes the first element of a list
     if(head == NULL)
         return NULL;
     task *front = head;
+    head = head->next;
+    front->next = NULL;
+    /* is this the last node in the list */
+    if(front == head)
+        head = NULL;
+    free(front);
+    return head;
+}
+
+prioritytask* pop_priority(prioritytask* head)			//Removes the first element of a list
+{
+    if(head == NULL)
+        return NULL;
+    prioritytask *front = head;
     head = head->next;
     front->next = NULL;
     /* is this the last node in the list */
@@ -200,6 +254,19 @@ task * first_to_last (task * head)
 	return new_front;
 
 }
+
+void clear(task* head) {
+	while (head) {
+		head = pop(head);
+	}
+}
+
+void clear_priority(prioritytask* head) {
+	while (head) {
+		head = pop_priority(head);
+	}
+}
+
 //------------------Reads a taskset from file and inserts them to ready queue------------------
 void readTaskset_n(char * filepath)
 {
@@ -216,6 +283,7 @@ void readTaskset_n(char * filepath)
 	    while(!feof(reads))									//Iterate through file
 		{
 			fscanf(reads,"%d %d %d %d %d %d\n", &data_struct->deadline, &data_struct->period, &data_struct->release_time, &data_struct->priority, &data_struct->ID, &data_struct->quantum);
+			data_struct->priority_quantum = 1;
 			waiting_queue=enqueue(waiting_queue, *data_struct);	//Read file and add it to the waiting queue
         }
     }
@@ -245,6 +313,56 @@ void OS_wakeup_n()
 	}
 }
 
+task * scheduler_rr() {
+	return ready_queue;
+}
+
+task * scheduler_sjf() {
+	task* shortest_task = ready_queue;
+	task* current = ready_queue;
+
+	while (current) {
+		if (current->quantum < shortest_task->quantum) {
+			shortest_task = current;
+		}
+		current = current->next;
+	}
+
+	swap(ready_queue, shortest_task);
+
+	return ready_queue;
+}
+
+task * scheduler_mq() {
+	for (int i = 0; i < 3; i++) {
+		clear_priority(priority_queues[i]);
+		priority_queues[i] = NULL;
+	}
+
+	task* current = ready_queue;
+	while (current) {
+		if(current->priority_quantum <= 0) {
+			current->priority = MIN(current->priority + 1, 3);
+			current->priority_quantum = priority_quantum[current->priority - 1];
+		}
+
+		priority_queues[current->priority] = enqueue_priority(priority_queues[current->priority], current);
+		current = current->next;
+		//current = pop(current);
+	}
+
+	for (int i = 0; i < 3; i++) {
+		if (priority_queues[i]) {
+			swap(priority_queues[i]->task, ready_queue);
+			//ready_queue = enqueue(ready_queue, *priority_queues[i]);
+			//pop(priority_queues[i]);
+			break;
+		}
+	}
+
+	return ready_queue;
+}
+
 //------------------Scheduler, returns the task to be executed ------------------
 task * scheduler_n()
 {
@@ -252,15 +370,15 @@ task * scheduler_n()
 	{
 		if (sched_type == sched_RR) 		//Here is the round robin (RR) scheduler, in the RR case, we just return the first element of the ready queue
 		{
-			return ready_queue;
+			return scheduler_rr();
 		}
 		if (sched_type == sched_SJF) 		//Here is where you implement your SJF scheduling algorithm
 		{
-			return ready_queue;
+			return scheduler_sjf();
 		}
 		if (sched_type == sched_MQ) 		//Here is where you implement your MQ scheduling algorithm,
 		{
-			return ready_queue;
+			return scheduler_mq();
 		}
 	}
 	else						//If the ready queue is empty, the operating system must have something to do, therefore we return an idle task
@@ -281,6 +399,9 @@ void dispatch_n(task* exec)
 	}
 
 	exec->quantum--; //Decrease the time quantum of a task, i.e. run the task
+
+	//TODO FIX
+	exec->priority_quantum--;
 
 	if (exec->quantum > 0)
 	{
@@ -308,10 +429,10 @@ void dispatch_n(task* exec)
 
 int main(int argc, char **argv)
 {
-	char * fp = "hej";			//File path to taskset
-	readTaskset_n(fp); 			//Read taskset
-	task * task_to_be_run; 		//Return taskset from scheduler
-	idle_task = create(1337, 0, 0, 0, 0, 200000000, NULL);  //Create a dummy idle task
+	char * fp = "src/taskset.txt";			//File path to taskset
+	readTaskset_n(fp); 						//Read taskset
+	task * task_to_be_run; 					//Return taskset from scheduler
+	idle_task = create(1337, 0, 0, 0, 0, 200000000, 0, NULL);  //Create a dummy idle task
 	while (1)
 	{
 		OS_wakeup_n();						//Wake up sleeping tasks
