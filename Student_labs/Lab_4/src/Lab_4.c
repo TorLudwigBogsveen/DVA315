@@ -271,8 +271,8 @@ void clear_priority(prioritytask* head) {
 void readTaskset_n(char * filepath)
 {
 	FILE *reads;											//File handle
-	char * sp = "/home/student/Desktop/Labs_material/taskset.txt";								//File path
-    reads=fopen(sp, "r");									//Open file
+	//char * sp = "/home/student/Desktop/Labs_material/taskset.txt";								//File path
+    reads=fopen(filepath, "r");									//Open file
     task * data_struct = malloc(sizeof(task));				//Allocate data
     if (reads==NULL) {										//If reading fails, return
       	perror("Error");
@@ -346,16 +346,13 @@ task * scheduler_mq() {
 			current->priority_quantum = priority_quantum[current->priority - 1];
 		}
 
-		priority_queues[current->priority] = enqueue_priority(priority_queues[current->priority], current);
+		priority_queues[current->priority - 1] = enqueue_priority(priority_queues[current->priority - 1], current);
 		current = current->next;
-		//current = pop(current);
 	}
 
 	for (int i = 0; i < 3; i++) {
 		if (priority_queues[i]) {
 			swap(priority_queues[i]->task, ready_queue);
-			//ready_queue = enqueue(ready_queue, *priority_queues[i]);
-			//pop(priority_queues[i]);
 			break;
 		}
 	}
@@ -384,7 +381,7 @@ task * scheduler_n()
 	else						//If the ready queue is empty, the operating system must have something to do, therefore we return an idle task
 	{
 		idle_task->quantum++;			//Make sure that the idle task dosnt run out of quantum
-		printf("RETURNED IDLE TASK");
+		printf("RETURNED IDLE TASK, ");
 		return idle_task;			//Return the idle task
 	}
 	return NULL;
@@ -401,7 +398,7 @@ void dispatch_n(task* exec)
 	exec->quantum--; //Decrease the time quantum of a task, i.e. run the task
 
 	//TODO FIX
-	exec->priority_quantum--;
+	exec->priority_quantum--; //Decrease the priority quantum so we know when to switch priority
 
 	if (exec->quantum > 0)
 	{
@@ -413,14 +410,14 @@ void dispatch_n(task* exec)
 		else
 		{
 			// Print task info
-			printf("Task %d is executing with %d quanta left - Total context switches: %d \n", exec->ID, exec->quantum, context_switches);
+			printf("Task %d with priority %d is executing with %d quanta left - Total context switches: %d \n", exec->ID, exec->priority, exec->quantum, context_switches);
 		}
 
 		ready_queue = first_to_last(ready_queue); //Re-sort ready queue
 	}
 	else
 	{
-		printf("Task %d has executed and finished its quanta - Total context switches: %d \n", exec->ID, context_switches);	//Printout task info
+		printf("Task %d with priority %d has executed and finished its quanta - Total context switches: %d \n", exec->ID, exec->priority, context_switches);	//Printout task info
 		ready_queue->release_time = ready_queue->release_time+ready_queue->period;
 		waiting_queue = enqueue(waiting_queue, *ready_queue); 			//Add the finished task to the waiting queue
 		ready_queue = pop(ready_queue); 						//Pop the finished task from ready queue
